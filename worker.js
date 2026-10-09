@@ -1,0 +1,13 @@
+// Cloudflare Worker: static assets + optional private Google Sheets via service account.
+// Configure SHEET_ID, GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY as Worker secrets/vars.
+export default {
+ async fetch(request,env){const url=new URL(request.url);if(url.pathname==='/api/sbm'){
+  if(!env.SHEET_ID||!env.GOOGLE_CLIENT_EMAIL||!env.GOOGLE_PRIVATE_KEY)return Response.json({error:'Google Sheets belum dikonfigurasi'},{status:503});
+  try{const token=await googleToken(env);const range=env.SHEET_RANGE||'SBML!A:I';const endpoint=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.SHEET_ID)}/values/${encodeURIComponent(range)}`;const r=await fetch(endpoint,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw Error('Google Sheets API HTTP '+r.status);const json=await r.json();const [headers,...rows]=json.values||[];if(!headers)throw Error('Sheet kosong');const keys=headers.map(x=>String(x).trim().toLowerCase().replace(/\s+/g,'_'));const data=rows.filter(r=>r.some(v=>String(v).trim())).map(row=>Object.fromEntries(keys.map((key,i)=>[key,row[i]??''])));return Response.json({data,source:'Google Sheets',sheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(env.SHEET_ID)}/edit`},{headers:{'Cache-Control':'no-store'}})
+  }catch(e){return Response.json({error:e.message},{status:502})}
+ }
+ return env.ASSETS.fetch(request);
+ }
+};
+function b64url(data){const bytes=typeof data==='string'?new TextEncoder().encode(data):new Uint8Array(data);let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+async function googleToken(env){const now=Math.floor(Date.now()/1000);const header=b64url(JSON.stringify({alg:'RS256',typ:'JWT'}));const payload=b64url(JSON.stringify({iss:env.GOOGLE_CLIENT_EMAIL,scope:'https://www.googleapis.com/auth/spreadsheets.readonly',aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+3600}));const signingInput=header+'.'+payload;const pem=env.GOOGLE_PRIVATE_KEY.replace(/\\n/g,'\n').replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g,'');const binary=atob(pem);const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));const key=await crypto.subtle.importKey('pkcs8',bytes,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);const sig=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',key,new TextEncoder().encode(signingInput));const assertion=signingInput+'.'+b64url(sig);const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion})});if(!r.ok)throw Error('Autentikasi Google gagal: '+r.status);return (await r.json()).access_token}
