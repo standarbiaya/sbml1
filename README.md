@@ -1,58 +1,83 @@
-# Dashboard SBML — versi siap pakai
+# Dashboard SBML - paket Cloudflare diperbaiki
 
-Aplikasi untuk inventarisasi usulan **Standar Biaya Masukan Lainnya (SBML)**, berisi 9 kolom sesuai permintaan:
+Perbaikan dari masalah `The directory specified by the assets.directory field ... does not exist: /opt/buildhome/repo/public`.
 
-`No | Nama KL | Tahun | No Surat / Tgl | Perihal | Surat Menkeu / Tgl | Karakteristik K/L | Jenis SBML | Status`
+## PENTING: struktur root repository
 
-## Cara A — LANGSUNG JALANKAN, tanpa instalasi
+Saat file ZIP diekstrak, **unggah ISI folder hasil ekstrak ke root (folder utama) repository GitHub**, bukan ZIP-nya dan bukan folder pembungkus. Pastikan tampilan root repository menjadi:
 
-1. Ekstrak ZIP.
-2. Klik dua kali `public/index.html` untuk membuka di Chrome atau Edge.
-3. Dashboard langsung terbuka dengan **8 baris data demonstrasi fiktif**. Silakan hapus, ubah, tambah, atau impor file CSV/JSON dari data sendiri.
-4. Klik `Tambah Usulan` untuk membuat baris baru; klik `Ubah`/`Hapus` di baris yang ada; data disimpan secara lokal di browser (`localStorage`). Gunakan `Ekspor CSV`/`JSON` sebagai cadangan. Penyimpanan hanya untuk browser dan perangkat yang sama; jangan gunakan mode incognito untuk data tetap.
-5. Untuk impor, gunakan `contoh-data/template-sbml.csv` dan isi data Anda di sana. Header wajib memiliki `Nama KL` dan `Status`, dan disarankan mempertahankan kesembilan header.
+```
+<root-repository>/
+├── public/
+│   └── index.html
+├── worker.js
+├── wrangler.jsonc
+├── package.json
+├── README.md
+├── Dashboard-SBML-Langsung-Buka.html
+└── contoh-data/
+    └── template-sbml.csv
+```
 
-**Aturan diagram**: Pie menampilkan hanya status **Disetujui** dan **Ditolak**. Status dalam proses, belum ada keputusan, atau status lain dihitung terpisah dan **tidak dimasukkan ke pie**. `Disetujui Sebagian` dikelompokkan sebagai disetujui; `Tidak Disetujui` sebagai ditolak. Grafik dan statistik hasil filter mengikuti pencarian, tahun, nama K/L, dan jenis SBML, sementara empat kartu KPI utama menampilkan total semua data.
+`wrangler.jsonc` menggunakan `"assets": { "directory": "./public" }`. Karena itu folder `public` **wajib sejajar dengan** file `wrangler.jsonc` saat proses build.
 
-## Cara B — Publikasi Cloudflare Workers
+### Jika repo GitHub terlanjur mempunyai folder bertingkat
 
-Prasyarat: Node.js, akun Cloudflare, internet.
+Misalnya yang ada adalah `dashboard-sbml-siap-pakai/public/index.html`, bukan `public/index.html`, pilih **satu** cara:
 
-1. Buka terminal/PowerShell di folder hasil ekstrak (sejajar `wrangler.jsonc`).
-2. Jalankan `npx wrangler login` untuk login Cloudflare.
-3. Jalankan `npx wrangler deploy`. URL `https://dashboard-sbml.<subdomain>.workers.dev` akan diberikan oleh Cloudflare. Ini sudah cukup untuk menggunakan dashboard di internet dalam mode data lokal; tidak perlu Google Sheets dahulu.
+A. **Disarankan:** pindahkan ISI `dashboard-sbml-siap-pakai/` ke root repository, sehingga `public/` berada di root; atau
 
-**Peringatan:** Data lokal tidak dibagikan lintas komputer/pengguna. Untuk penggunaan bersama, ikuti konfigurasi Google Sheets di bawah.
+B. Atur **Root directory** proyek Cloudflare ke `dashboard-sbml-siap-pakai` (jika pengaturan tersebut tersedia) dan pastikan `wrangler.jsonc` terletak dalam folder yang sama.
 
-## Cara C — Hubungkan Google Sheets (baca saja)
+Jangan mengganti `assets.directory` menjadi `.` karena itu dapat mempublikasikan file backend dan konfigurasi sebagai aset statis.
 
-1. Buat Google Sheets, tab bernama `SBML`; baris pertama wajib berisi header di atas persis dengan urutan A:I. Isi usulan mulai baris kedua.
-2. Di Google Cloud Console, aktifkan **Google Sheets API**; buat **Service Account** dan unduh kunci JSON-nya secara aman.
-3. Bagikan spreadsheet kepada email `client_email` service account dengan izin **Viewer**.
-4. Di terminal, jalankan perintah ini satu per satu, lalu masukkan nilainya saat diminta:
+## Deploy dari GitHub melalui Cloudflare Workers Builds
 
-   ```bash
-   npx wrangler secret put SHEET_ID
-   npx wrangler secret put GOOGLE_CLIENT_EMAIL
-   npx wrangler secret put GOOGLE_PRIVATE_KEY
-   ```
+1. Buat/ buka repository GitHub, unggah semua isi ZIP yang diekstrak ke root.
+2. Periksa pada GitHub: `public/index.html`, `worker.js`, `wrangler.jsonc`, `package.json` tersedia pada lokasi di atas.
+3. Di Cloudflare Workers & Pages, pilih Worker yang terhubung ke GitHub dan buka pengaturan **Build / Deploy**.
+4. Set `Root directory` ke root repository (kosong atau `/`, sesuai pilihan antarmuka), dan `Deploy command` ke `npx wrangler deploy`. Aplikasi ini tidak membutuhkan build frontend terpisah; bila kolom **Build command** bersifat opsional, biarkan kosong.
+5. Simpan, lalu **Retry deployment**. Jika sebelumnya repo mengandung struktur salah, pastikan perubahan struktur sudah di-commit/push ke branch yang terhubung.
+6. Uji alamat `https://<nama-worker>.<subdomain>.workers.dev`. Dashboard tampil dengan data demo; Google Sheets belum terhubung jika secrets belum diset.
 
-   `SHEET_ID` adalah bagian URL spreadsheet di antara `/d/` dan `/edit`. `GOOGLE_CLIENT_EMAIL` dan `GOOGLE_PRIVATE_KEY` diambil dari kunci JSON service account. Untuk private key, tempel nilai lengkap termasuk `BEGIN/END PRIVATE KEY` (line break nyata atau `\\n` sama-sama didukung).
-5. Jalankan ulang `npx wrangler deploy`. Dashboard otomatis memuat data Sheet bila API siap. Tombol **Buka Sheet** dan **Data Lokal** akan muncul. `Refresh` membaca ulang Sheet; pengubahan data di dashboard dinonaktifkan dalam mode Sheet.
+> Dalam antarmuka Cloudflare yang berbeda, letak dan istilah menu bisa berubah. Prinsip utamanya: command dijalankan dari direktori yang berisi `wrangler.jsonc` dan `public/`.
 
-**Keamanan:** API Google Sheets pada paket ini tidak melakukan autentikasi pengguna, sehingga siapa pun yang mengetahui URL Worker bisa membaca data jika aplikasi di-deploy secara publik. Untuk data internal K/L dan surat resmi, **WAJIB** batasi akses website **dan endpoint `/api/sbml`** menggunakan Cloudflare Access / kebijakan organisasi. Jangan pernah memasukkan `GOOGLE_PRIVATE_KEY` ke HTML atau mengunggahnya ke repo publik.
+## Deploy dengan terminal lokal (alternatif)
 
-## Fitur
-- Diagram donat pie status disetujui vs ditolak, diperbarui otomatis mengikuti filter non-status.
-- Kartu ringkasan total, disetujui, ditolak, dalam proses/status lain.
-- Filter status via tombol cepat, filter tahun, K/L, jenis SBML, pencarian semua kolom.
-- Matriks 9 kolom plus kolom aksi untuk edit/hapus lokal, halaman 20 baris.
-- Impor CSV (koma atau titik koma, termasuk nilai dengan koma dan baris baru) atau JSON (array objek), ekspor CSV/JSON, cetak.
-- Tanpa dependensi CDN (dapat berfungsi offline), responsif di desktop dan HP.
-- Sinkronisasi baca-saja Google Sheets via Cloudflare Workers.
+Buka terminal **di dalam folder yang berisi** `wrangler.jsonc` dan `public` lalu:
 
-## Pemecahan masalah
-- Dashboard terbuka tetapi Google Sheets belum terhubung: **normal**, mode lokal digunakan otomatis. Untuk Google Sheets, deploy terlebih dahulu dan isi secrets.
-- Jika Sheet kosong atau error: pastikan tab `SBML`, header, hak akses service account, aktivasi API, serta secrets cocok.
-- Setelah file CSV diimpor dan ingin kembali ke demo: hapus data lokal browser untuk situs itu, lalu refresh. Sebelum menghapus, ekspor data untuk cadangan.
-- Jangan gunakan data fiktif dari paket ini sebagai dasar keputusan fiskal.
+```
+npm install
+npx wrangler login
+npm run deploy
+```
+
+## Google Sheets (baca saja)
+
+Aplikasi tetap bisa digunakan tanpa Google Sheets. Untuk integrasi, buat tab `SBML` dengan 9 header:
+
+```
+No,Nama KL,Tahun,No Surat / Tgl,Perihal,Surat Menkeu / Tgl,Karakteristik K/L,Jenis SBML,Status
+```
+
+Aktifkan Google Sheets API di Google Cloud; buat Service Account, lalu bagikan spreadsheet ke email Service Account sebagai Viewer. Isikan Worker secrets secara aman (jangan taruh di repository):
+
+```
+npx wrangler secret put SHEET_ID
+npx wrangler secret put GOOGLE_CLIENT_EMAIL
+npx wrangler secret put GOOGLE_PRIVATE_KEY
+```
+
+`SHEET_ID` adalah bagian URL di antara `/d/` dan `/edit`. `GOOGLE_CLIENT_EMAIL` dan `GOOGLE_PRIVATE_KEY` berasal dari JSON key Service Account. Setelah konfigurasi, deploy ulang dan klik Refresh. Google Sheets disinkronkan **baca saja**; perubahan data di dashboard lokal tidak menulis balik ke Sheet.
+
+**Keamanan:** Jika berisi surat/keputusan internal K/L, jangan publikasikan dashboard dan endpoint `/api/sbml` tanpa Cloudflare Access atau autentikasi organisasi. Endpoint API **tidak** memiliki autentikasi sendiri.
+
+## Grafik pie dan fitur
+
+Grafik pie hanya membandingkan **Disetujui** dan **Ditolak**, sedangkan status lain (misalnya Dalam Proses) ditampilkan terpisah. Tersedia filter status, tahun, K/L, jenis SBML, pencarian seluruh kolom, tambah/ubah/hapus data lokal, impor CSV/JSON, ekspor CSV/JSON dan cetak. Data contoh bersifat **fiktif**.
+
+## Uji cepat
+
+- Akses `/` => halaman Dashboard SBML ditampilkan.
+- Akses `/api/sbml` sebelum konfigurasi => HTTP 503 `Google Sheets belum dikonfigurasi` (normal).
+- Setelah mengisi secrets dengan benar, `/api/sbml` mengembalikan data JSON dari spreadsheet.
